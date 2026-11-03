@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ayah Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Ayah Finder</h1>
+      <p class="sub">Recite part of the Quran. The app identifies the ayah from the recitation's phonemes.</p>
+    </header>
+
+    <section class="recorder">
+      <button id="record" class="record" disabled>
+        <span class="dot"></span><span id="record-label">Start</span>
+      </button>
+      <div class="meter"><div id="level"></div></div>
+      <div id="timer" class="timer">0:00</div>
+      <label class="upload">
+        <input id="file" type="file" accept="audio/*" hidden>
+        or upload an audio file
+      </label>
+      <div id="status" class="status">Connecting to server...</div>
+    </section>
+
+    <section id="result" class="result" hidden>
+      <div class="best">
+        <div class="best-head">
+          <div>
+            <div class="surah-name"><span id="best-name-en"></span> <span id="best-name-ar" class="ar-inline"></span></div>
+            <div id="best-ref" class="ref"></div>
+          </div>
+          <div class="score">
+            <div id="best-score" class="score-num"></div>
+            <div class="score-label">match</div>
+          </div>
+        </div>
+        <div id="best-text" class="ayah-text" dir="rtl" lang="ar"></div>
+        <div id="best-note" class="note"></div>
+      </div>
+
+      <h2>Top candidates</h2>
+      <ol id="candidates" class="candidates"></ol>
+
+      <details class="debug">
+        <summary>Phonemes</summary>
+        <div class="ph-label">Recognised</div>
+        <div id="ph-rec" class="ph" dir="rtl"></div>
+        <div class="ph-label">Reference for best match</div>
+        <div id="ph-ref" class="ph" dir="rtl"></div>
+        <div id="timing" class="timing"></div>
+      </details>
+    </section>
+
+    <footer>
+      Recognition by Quran-Lab zipformer_p-arabic-v3.1, a phoneme model; no other speech-to-text is used.
+      Automatic recognition can be wrong and does not replace a qualified teacher.
+      Uthmani text: <a href="https://tanzil.net" target="_blank" rel="noopener">Tanzil Project</a>.
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+models/
+tests/audio/
+data/quran-uthmani.xml
+.env
+recordings/
