@@ -1,10 +1,10 @@
 # Ayah Finder
 
-A small web app. You recite part of the Quran into the microphone, and it tells you which ayah it was. It shows the surah, the ayah number, the Uthmani text, a match score, and the top 3 candidates.
+You recite some Quran into the mic, and the app tells you which ayah it was. It shows the surah, the ayah number, the Uthmani text, a match score and the top 3 guesses.
 
-Recognition uses only the Quran-Lab **zipformer_p-arabic-v3.1** phoneme model, run locally with sherpa-onnx. No other speech-to-text is used.
+Recognition is done only by Quran-Lab's zipformer_p-arabic-v3.1 model, running locally with sherpa-onnx. No Whisper or any other speech-to-text.
 
-## Setup
+## Running it
 
 ```
 python -m venv .venv
@@ -17,109 +17,87 @@ cd backend
 uvicorn app:app --port 8000
 ```
 
-1. **Access.** `hf auth login` needs an account that has been approved on the gated model page.
-2. **Model files.** `download_model.py` fetches the v3.1 model, `tokens.txt` and the reference phonemes into `models/`. It is pinned to commit `5a115aa9`.
-3. **Quran text.** `build_quran_text.py` fetches the Tanzil Uthmani text.
-4. **Run.** Open http://localhost:8000, press Start, recite, and press Stop. You can also upload an audio file.
+The model repo is gated, so `hf auth login` has to use an account that's been approved on the model page. After that, open http://localhost:8000, press Start, recite, and press Stop. You can also upload an audio file instead of using the mic.
 
-To debug recognition, set `QURANLAB_SAVE_RECORDINGS=1` before starting the server. Each request's audio and recognised phonemes are then saved in `recordings/`.
+If something isn't being recognised, start the server with `QURANLAB_SAVE_RECORDINGS=1`. It then saves each recording, plus what the model heard, into `recordings/`. That's how I found out my first tries failed because my mic was off.
 
-## Which file is v3.1
+## Finding v3.1
 
-The repo has no tags, so I went through the commit history and compared file hashes.
+The repo has no tags, so I went through the commit history to find v3.1.
 
-- **August 17.** The madd fine-tune of v3 was uploaded and renamed `zipformer_p_arabic_v3.1.*`. The `zipformer_p_arabic_v3.1.onnx` on `main` today is byte-identical to that upload.
-- **October 31.** The card said the released v3.1 ONNX ran one activation (SwooshL) with a different setting from the one used in training. It added a corrected "as trained" export of the same weights. That export was renamed v3.2 the same day, and v3.3 followed.
-- **November 2.** v3.2 and v3.3 were removed, and the card went back to "Latest: v3.1".
+The file called `zipformer_p_arabic_v3.1.onnx` on `main` hasn't changed since August 17. That's when the madd fine-tune was uploaded and renamed to v3.1. On October 31, the maintainers said this export used a different SwooshL activation setting than the one the model was trained with. They uploaded a corrected "as trained" export, renamed it to v3.2 the same day, and then removed v3.2 and v3.3 on November 2. The card now just says v3.1 is the latest.
 
-So I use `zipformer_p_arabic_v3.1.onnx` from `main`. I also tested the corrected export, which is still in commit `3858bdc2`, on the same 76 clips.
+So there were two candidates. I ran both on the same 76 test clips:
 
 | Model file | Full | Partial | Across two ayat | Mean score of correct matches |
 |---|---|---|---|---|
 | Official v3.1 | 40/40 | 18/20 | 12/16 | 96.5% |
 | Corrected export | 40/40 | 17/20 | 11/16 | 94.4% |
 
-The official file is slightly better here. That matches the October card's own numbers: the corrected export caught more recitation mistakes, but was slightly worse on correct recitation.
+The official file did slightly better. That fits the maintainers' own October numbers: the corrected export was better at catching mistakes, but slightly worse on correct recitation. So I use the official file, and the download script is pinned to commit `5a115aa9`.
 
-## The model's phonetic alphabet
+## What I learned about the model's output
 
-Full notes are in [docs/phonetic_alphabet.md](docs/phonetic_alphabet.md), generated from the data by `scripts/study_alphabet.py`.
+My full notes are in [docs/phonetic_alphabet.md](docs/phonetic_alphabet.md). The script `scripts/study_alphabet.py` generates them from the model's own files.
 
-- **Tokens and CTC.** `tokens.txt` has 250 symbols plus `<blank>` at id 250. The model outputs one prediction every 40 ms. Decoding keeps the best symbol per frame, merges repeats, and removes blanks. A blank between two identical symbols is how the model says a sound twice, for example a long madd. `phoneme_units.json` puts the blank at 0, so its ids are off by one and are not used.
-- **Built from 42 characters.** The 250 symbols are made of 42 characters. Most tokens are merged chunks: a letter with its vowel (`بَ`), a doubled letter with its vowel (`ببَ`), or a whole madd (`اااا`). One sound can be split into tokens in different ways, so the app compares characters, not tokens.
-- **Letters.** Each consonant is written as its Arabic letter. Hamza is `ء`, and a hamzat al-wasl is written only when it is actually pronounced.
-- **Short vowels.** Fatha, damma and kasra follow their letter. Sukun has no symbol: a letter with no vowel after it is sakin. For example, بِسْمِ is written `بِسمِ`.
-- **Shadda** is a doubled letter: رَبِّ is `رَببِ`. With noon and meem it also carries ghunna, so they appear 4 times: إِنَّ is `ءِننننَ`.
-- **Tanween** is written as the noon it sounds like, then follows the noon rules. سَوَآءٌ عَلَيْهِمْ is `سَوَااااءُن عَلَيهِم`. At a stop, tanween fath becomes a 2-beat alif: رَقِيبًا is `رَقِۦۦبَاا`.
-- **Madd.** `ا`, `ۥ` and `ۦ` are long a, u and i, one symbol per beat. The reference uses only runs of 2, 4 and 6. These are natural madd at 2, the connected and separated madd at 4 (Hafs via ash-Shatibiyyah), and madd lazim at 6. A stop on a long vowel, as in ٱلرَّحِيمِ, gives `ۦۦۦۦ`, which is 4.
-- **Ghunna and ikhfaa.**
-  - Hidden noon is `ںںں`, always 3 symbols.
-  - Meem before ب, both ikhfaa shafawi and iqlab, is `۾۾۾`. For example, أَنۢبَآءِ is `ءَ۾۾۾بَااااءِ`.
-  - Idgham with ghunna into و or ي triples that letter: مَن يَقُولُ is `مَيييَقُۥۥلُ`.
-- **Qalqalah** is `ڇ` written after a sakin ق ط ب ج د: رَزَقْنَـٰهُمْ is `رَزَقڇنَااهُم`.
-- **Rare Hafs features** have their own marks: saktah `ۜ` at 75:27 and 83:14, tasheel `ٲ` at 41:44, and imalah `۪` at 11:41.
-- **Pronunciation, not spelling.** The reference writes each ayah as it is pronounced in connected recitation, with the stopping form at its end. Words therefore merge: غِشَـٰوَةٌ وَلَهُمْ is written as one chunk, `غِشَااوَتُوووَلَهُم`.
+The model outputs one of 251 symbols every 40 ms, and one of those symbols is the CTC blank. Decoding takes the best symbol for each frame, merges repeats, and drops the blanks. The blank is also how the model says the same sound twice in a row. Use `tokens.txt` for the ids, not `phoneme_units.json`, which is off by one.
 
-## How it works
+Those 250 symbols are built from just 42 characters. Most of them are chunks, like a letter plus its vowel (`بَ`) or a whole madd (`اااا`). So the same sound can be split into tokens more than one way, which is why I compare characters instead of tokens.
 
-```
-mic ─► browser: 16 kHz mono WAV ─► FastAPI ─► sherpa-onnx, zipformer2 CTC, greedy
-                                                   │ phoneme characters
-                                                   ▼
-                              search all 6,236 ayat (652k phoneme characters)
-                                                   │
-                                                   ▼
-                     top 3 + scores ─► page: surah, ayah, Uthmani text, score
-```
+The script writes pronunciation, not spelling:
 
-The browser records raw audio and converts it to 16 kHz WAV itself, so the server does not need ffmpeg.
+- **Letters and vowels.** Letters are plain Arabic letters, and fatha, damma and kasra follow them. Sukun has no symbol: a letter with no vowel after it is sakin. For example, بِسْمِ is written `بِسمِ`.
+- **Shadda** is a doubled letter: رَبِّ is `رَببِ`. A doubled noon or meem also gets its ghunna, so it appears 4 times: إِنَّ is `ءِننننَ`.
+- **Tanween** is written as a real noon, which then follows the noon rules. At a stop, tanween fath becomes `اا`.
+- **Madd** is the number of repeated long vowels (`ا`, `ۥ`, `ۦ`), one per beat. The reference only uses 2, 4 and 6: natural madd is 2, the connected and separated madd are 4, and madd lazim is 6.
+- **Hidden noon (ikhfaa)** is `ںںں`. Meem before ب, which covers both ikhfaa shafawi and iqlab, is `۾۾۾`.
+- **Idgham with ghunna** into و or ي triples that letter: مَن يَقُولُ becomes `مَيييَقُۥۥلُ`.
+- **Qalqalah** is a `ڇ` after a sakin ق ط ب ج د.
+- **Rare cases.** A few rare Hafs features have their own marks: saktah `ۜ`, tasheel `ٲ` and imalah `۪`.
 
-### The search, and why I chose it
+Words also merge across boundaries the way they're recited, so the phonetic words don't line up with the written words.
 
-The model gives phonemes, so I compare phonemes directly. I never convert back to Arabic words.
+## How the search works, and why
 
-**The whole Quran as one sequence.** All ayat are joined in order into one long phoneme sequence. A recitation is then a piece of that sequence with a few errors. That covers all three cases from the brief:
+I joined the phonemes of all 6,236 ayat into one long sequence. A recitation is then just a stretch of that sequence with a few mistakes in it. That's why partial ayat and recitations running across two ayat needed no special handling: they're just shorter or longer stretches. Matching word by word wouldn't work, because the phonetic words don't line up with the written ones.
 
-- a full ayah
-- part of an ayah
-- a recitation that runs across two or more ayat
+The search has two steps:
 
-None of them needs special handling. Matching word by word would not work well, because the phonetic words merge across word boundaries, as shown above.
+1. **A fast index finds likely places.** Every 4-character window of the recitation votes for where it appears in the Quran, and the real location collects lots of votes in one spot. Repeated characters are collapsed first, so madd length doesn't matter at this stage.
+2. **Edit distance checks the best places properly.** The whole recitation has to match, but it can start and end anywhere in the reference.
 
-**Step 1: find candidate places.** Every 4-character window of the recitation is looked up in an index of the whole Quran. Each hit votes for a position. The true position collects many votes in the same spot, while chance matches are spread out. Before indexing, repeated characters are collapsed (`اااا` becomes `ا`), so madd length does not affect this step. This takes milliseconds and survives recognition errors, because only some windows need to match.
+In the alignment, a missing or extra repeat of a character costs 0.3, while a wrong letter costs 1. That's because madd and ghunna length is the thing that varies most between reciters. A stop madd, for example, can be 2, 4 or 6 beats, while the reference always writes 4.
 
-**Step 2: score the best places precisely.** For each of the 12 to 24 strongest places, the recitation is aligned to the reference with edit distance. The whole recitation has to be matched, but it may start and end anywhere in the reference ("fitting" alignment). One extra or missing repeat of the same character costs 0.3 instead of 1. This keeps madd and ghunna length differences cheap, because those are what differ most between reciters. For example, a stop madd may be 2, 4 or 6 beats, while the reference always writes 4. A wrong letter or vowel costs the full 1.
+The score is how much of the recitation matched, with 100% being a perfect match. If the match covers more than one ayah, the page shows all of them.
 
-**Score.** The score is `1 − alignment cost ÷ number of recognised phonemes`, where 100% is a perfect match. The matched span is mapped back to the ayat it covers. The page then shows whether the recitation covered one ayah, part of one, or several.
+Some phrases appear word-for-word in more than one place, like فَبِأَيِّ ءَالَآءِ رَبِّكُمَا تُكَذِّبَانِ in Ar-Rahman. Audio alone can't tell those apart, so the guesses tie and the page says the result is ambiguous.
 
-**Repeated wording.** Some phrases appear word-for-word in several places. فَبِأَيِّ ءَالَآءِ رَبِّكُمَا تُكَذِّبَانِ occurs 31 times in Surah Ar-Rahman. Audio alone cannot tell those apart. The candidates then tie, and the page marks the result as ambiguous.
+## How well it works
 
-## Results
+I tested with EveryAyah recordings of Alafasy, Husary, Abdul Basit and Minshawy, using `tests/test_recitations.py`:
 
-`tests/test_recitations.py` runs EveryAyah recordings of four reciters through the full pipeline: Alafasy, Husary, Abdul Basit and Minshawy. Each reciter has 10 full ayat, 5 middle slices covering 30% to 65% of an ayah, and 4 joins of the second half of one ayah with the first half of the next.
-
-| Query type | Top-1 | Top-3 |
+| Case | Correct first guess | In top 3 |
 |---|---|---|
 | Full ayah | 40/40 | 40/40 |
 | Part of an ayah | 18/20 | 20/20 |
 | Across two ayat | 12/16 | 14/16 |
 
-Recognition runs about 17 times faster than real time on a laptop CPU, and the search takes 25 to 140 ms.
+Every miss was a duplicate phrase:
 
-- **Part-of-ayah misses.** Both are the middle of 3:190. That passage is word-for-word identical to part of 2:164, and 3:190 is still in the top 3.
-- **Across-two-ayat misses.** All are the join of 36:2 and 36:3. Half of 36:2's audio is mostly its final madd and silence. What remains is ءِنَّكَ لَ, which occurs in many places.
-- **Reciter repetition.** Alafasy repeats a phrase inside 18:10. The score drops to 75%, but the right ayah still wins.
+- **Part of an ayah.** The middle of 3:190 is word-for-word the same as part of 2:164.
+- **Across two ayat.** The join of 36:2 and 36:3 mostly leaves ءِنَّكَ لَ, which shows up all over the Quran.
 
-`tests/simulate_search.py` tests only the search. It needs no model, and it injects random errors into stand-in queries.
+On my laptop, recognition runs about 17 times faster than real time, and the search takes under 0.15 seconds.
 
-## Limitations
+## Known limits
 
-- Isti'adha (أعوذ بالله) is not in the reference. Reciting it lowers the score.
-- The model and reference follow Hafs 'an 'Asim. Other qira'at will score lower.
-- Very short recitations are often ambiguous.
-- Automatic recognition can be wrong and does not replace a qualified teacher. The model's license (NPL-1.2) requires this notice.
+- **A'udhu billah.** It isn't in the reference, so saying it first lowers the score.
+- **Qira'at.** The model and reference are Hafs 'an 'Asim only.
+- **Repeated phrases.** If you repeat a phrase, the score drops, but it usually still finds the right ayah.
+- **Short clips.** A few words can easily be ambiguous.
+- **Not a teacher.** Automatic recognition can be wrong and doesn't replace a qualified teacher. The model's license (NPL-1.2) asks every app to say this.
 
 ## Credits
 
-- Model and reference phonemes: Quran-Lab zipformer_p-arabic-v3.1, under the Quran-Lab No-Profit License 1.2.
-- Uthmani text and surah metadata: Tanzil Project (https://tanzil.net), CC BY 3.0. The text is unmodified.
+- **Model and reference phonemes:** Quran-Lab zipformer_p-arabic-v3.1, under the Quran-Lab No-Profit License 1.2.
+- **Uthmani text and surah names:** Tanzil Project (https://tanzil.net), under CC BY 3.0. The text is unmodified.
